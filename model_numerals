@@ -1,0 +1,111 @@
+var utterances = ["one","two","three","four","five","six","seven","eight","nine","ten"]
+
+var utterancePrior = function() { return uniformDraw(utterances) } 
+
+var states = _.range(0, 11)
+
+var statePrior = function() { return uniformDraw(states) } 
+
+var cost = function(utterance){
+  utterance == "null" ? 0 :
+  1
+}
+
+var nohalos = {
+  "one" : 1,
+  "two" : 1,
+  "three" : 1,
+  "four" : 1,
+  "five" : 1,
+  "six" : 1,
+  "seven" : 1,
+  "eight" : 1,
+  "nine" : 1,
+  "ten" : 1
+}
+
+var literalMeanings = {
+  "one" : function(state) { return state >= 1; },
+  "two" : function(state) { return state >= 2; },
+  "three" : function(state) { return state >= 3; },
+  "four" : function(state) { return state >= 4; },
+  "five" : function(state) { return state >= 5; },
+  "six" : function(state) { return state >= 6; },
+  "seven" : function(state) { return state >= 7; },
+  "eight" : function(state) { return state >= 8; },
+  "nine" : function(state) { return state >= 9; },
+  "ten" : function(state) { return state >= 10; },
+}; 
+
+var followsthat = function(exp1, exp2) {
+  var f = literalMeanings[exp1]
+  var g = literalMeanings[exp2]
+  var m = function() {
+    var s = statePrior()
+    //add the desired assumption:
+    condition(f(s))
+    return {'follows': g(s)}
+  };
+  var dist = Infer({}, m)
+  return dist 
+};
+
+var literalListener = cache(function(utt) {
+  return Infer({model: function(){
+    var state = statePrior()
+    var meaning = literalMeanings[utt]
+    condition(meaning(state))
+    return state
+  }})
+})
+
+// pragmatic speaker
+var speaker = cache(function(state) {
+  return Infer({model: function(){
+    var utt = utterancePrior()
+    factor(literalListener(utt).score(state)-cost(utt))
+    return utt;
+  }})
+})
+
+var partialTruth = cache(function(utt){
+  var meaning = literalMeanings[utt]
+  var consistentWorlds = Infer(function(){
+    var state = statePrior()
+    condition(meaning(state))
+    return state
+  })
+  return Infer({model: function(){
+    var uttprime = utterancePrior()
+    var state = sample(consistentWorlds)
+    condition(Math.exp(followsthat(uttprime, utt).score({"follows": true}))==1)
+    condition(Math.exp(followsthat(utt, uttprime).score({"follows": true}))!=1)
+    factor(speaker(state).score(uttprime))
+    return uttprime;
+  }})
+})
+
+var impSpeaker = cache(function(state,alpha,beta,halos) { 
+  return Infer(function() {
+    var utt = utterancePrior()
+    var uttprime = utterancePrior()
+    var uttprimeMeaning = literalMeanings[uttprime]
+    condition(uttprimeMeaning(state))
+    var speakerProb = Math.exp(speaker(state).score(utt))
+    if(state == 10 | state == 0) {
+      factor(Math.log(speakerProb))
+    } else {
+      var partialTruthProb = halos[utt] * Math.exp(partialTruth(uttprime).score(utt))
+      factor(alpha * (Math.log(speakerProb + beta * partialTruthProb)))
+    }
+    return(utt)
+  })    
+})
+
+var pragmaticListener = function(utterance,alpha,beta,halos){
+  Infer({model: function(){
+    var state = statePrior()
+    observe(impSpeaker(state,alpha,beta,halos),utterance)
+    return state
+  }})
+}

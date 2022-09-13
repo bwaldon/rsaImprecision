@@ -2,7 +2,7 @@ var utterances = ["one","two","three","four","five","six","seven","eight","nine"
 
 var utterancePrior = function() { return uniformDraw(utterances) } 
 
-var states = _.range(0, 11)
+var states = _.range(1, 11)
 
 var statePrior = function() { return uniformDraw(states) } 
 
